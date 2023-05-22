@@ -1,13 +1,22 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% This script reads images
+% This script implements a linear viscoelastic model for ETFE and compares
+% its predictions with experimental data
+%
+% If using these codes for research, teaching or industrial purposes, please cite:
+% A. Comitti & F. Bosi (2023). Thermomechanical characterisation and linear viscoelastic modelling of
+% ETFE foils.
+% DOI:
+% Link:
+%
+% In order to simulate the example test data, make sure to install the Curve Fitting Toolbox: https://www.mathworks.com/products/curvefitting.html %%%%%
 %
 % Written by: A. Comitti, 2023 ~  a.comitti@ucl.ac.uk
 %
-% Copyright F. Bosi, 2023; A. Comitti, 2023
+% Copyright F. Bosi, 2023; A. Comitti, 2023 ~  f.bosi@ucl.ac.uk
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 clc; clear;
 path = pwd;
-%%%%%%%%%%%% loading the model constants %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%% loading the model parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 path = pwd;
 opt1 = readmatrix(strcat(path,'\D11_Opt_1e5Mpa.csv'));
 opt2 = readmatrix(strcat(path,'\D22_Opt_1e5Mpa.csv'));
@@ -21,13 +30,12 @@ TRef = 20 + 273.15;
 poisson = 0.43;
 thickness = 0.2;
 
-%%%%%%%%% TEST DATA LOADING; comment out the test not needed %%%%%%%%%%%%%
+%%%%%%%%% EXPERIMENTAL DATA; comment out the test not needed %%%%%%%%%%%%%
 %%%% the raw data are all expressed in engineering quantities %%%%%%%%%%%%
 
+%%% EXAMPLE 1 - UNIAXIAL TENSILE TEST AT 40°C and CONSTANT STRAIN RATE 0.1%/s, ALONG THE
+%%% MACHINE DIRECTION (MD)
 
-
-
-%%%% uniaxial constant strain rate tests data from Instron, MD %%%%%%%%%%%
 % rawData = rmmissing(readmatrix(strcat(path,'\OUTRaw_MD_CSR_01_T40.csv')));
 % tempData = rmmissing(readmatrix( ...
 %     strcat(path,'\OUTTemp_MD_CSR_01_T40.csv')));
@@ -60,20 +68,21 @@ thickness = 0.2;
 % e11Sd =  zeros(length(e11),1);
 % E = 1030.02;
 
+%%% EXAMPLE 2 - UNIAXIAL RELAXATION TEST AT 23°C, ALONG THE MACHINE
+%%% DIRECTION (MD) - Figure 10b of the paper
 
-
-%%%% uniaxial relaxation tests data from Instron, MD %%%%%%%%%%%%%%%%%%%%%
 rawData = rmmissing(readmatrix(strcat( ...
     path,'\OUTRaw_MD_Rel_9MPa_T20.csv')));
 tempData = rmmissing(readmatrix(strcat( ...
     path,'\OUTTemp_MD_Rel_9MPa_T20.csv')));
+
 % temperature vector synchronisation
 for i = 1: size(tempData,2)-1
     T{i} = rmmissing(interp1(tempData(:,1),tempData(:,i+1), ...
         rawData(:,1+9*(i-1)),'linear',tempData(end,i+1)))+273.15; 
 end
 
-% interpolation on a time vector
+% interpolation on time vector
 tref = transpose(logspace(-1,4,40000));
 for i = 1: size(tempData,2)-1
     [t{i},index,~] = unique(rawData(:,1+9*(i-1)),'stable');
@@ -118,12 +127,12 @@ for q = 1:length(opt1)-1
             D66j(q) = opt6(q+1,1);
 end
 
-%%%%% initialisation
-s11_R = zeros(length(e11),1) ;% engineering stress 11  
-s22_R = zeros(length(e11),1) ;% engineering stress 22
-s12_R = zeros(length(e11),1) ;% engineering stress 12
-e33_R = zeros(length(e11),1); % out of plane engineering strain
-q11 = zeros(length(tau),1) ;
+%%%%% initialization
+s11_R = zeros(length(e11),1) ; % engineering stress 11  
+s22_R = zeros(length(e11),1) ; % engineering stress 22
+s12_R = zeros(length(e11),1) ; % engineering shear stress 12
+e33_R = zeros(length(e11),1);  % out of plane engineering strain
+q11 = zeros(length(tau),1) ;   % hereditary quantities
 q11old = zeros(length(tau),1) ;
 q12 = zeros(length(tau),1) ;
 q12old = zeros(length(tau),1) ;
@@ -138,12 +147,11 @@ q23old = zeros(length(tau),1) ;
 q66 = zeros(length(tau),1) ;
 q66old = zeros(length(tau),1) ;
 
-%starting the thing
 for n = 2:1:length(e11)
-        %Shift factor and reduced time
+        % Shift factor and reduced time
         aT = 10^(-ea11/factor*(-1/temp(n) + 1/TRef));
         dtr = (tref(n)-tref(n-1))/(aT);
-        %Initialization of parameters
+        % Initialization of parameters
         F11 = 0;        F11a = 0;
         D11 = D110;
         F12 = 0;        F12a = 0;
@@ -158,7 +166,7 @@ for n = 2:1:length(e11)
         D23 = D230; 
         F66 = 0;
         D66 = D660; 
-        %hereditary storage 
+        % hereditary storage 
         q11old = q11;
         q12old = q12;
         q21old = q21;
@@ -166,7 +174,7 @@ for n = 2:1:length(e11)
         q13old = q13;
         q23old = q23;
         q66old = q66;
-        %looping through the Prony series
+        % looping through the Prony series
         for c = 1:length(tau)
             dtrexp = dtr/tau(c);
             if dtrexp<1e-10
@@ -190,14 +198,14 @@ for n = 2:1:length(e11)
             F66 = F66 + D66j(c)*(exp(-dtrexp)*q66old(c)-g*s12_R(n-1)); 
         end
 
-%calculation of stresses 
+% calculation of stresses 
         detD = D11*D22-D21*D12;
         s11_R(n) = 1/detD *(D22*(e11(n)+F11+F12)-D21*e22(n)-D12*(F12+F22));
         s22_R(n) = 1/detD *(D11*(e22(n)+F22+F21)-D12*e11(n)-D21*(F21+F11));
         s12_R(n) = (e12(n)+F66)/D66;
         e33_R(n) = D13*s11_R(n) +  D23*s22_R(n); 
         
-%calculation of the hereditary integral at the end of the step
+% Calculation of the hereditary integral at the end of the step
         for c = 1:length(tau)
             dtrexp = dtr/tau(c);
             if dtrexp<1e-10
@@ -236,9 +244,8 @@ h3 =   plot(e11,E*e11,'LineStyle',':','Color',Col(3),'LineWidth',2, ...
 hold off
 xlim([0 max(e11)*1.2])
 ylim([0 max(s11)*1.2])
-set(gca,'fontname','Times New Roman') 
+set(gca,'fontname','Times New Roman','fontsize',16) 
 set(gcf, 'color', [1 1 1])
-fontsize(gca,16,"points")
 fig.Units = 'centimeters';
 set(gcf,'Position',[3 3 19 15.2])
 xlabel("$\epsilon$",'FontName','Times New Roman','FontSize',18, ...
@@ -278,8 +285,7 @@ h4 = fill(trev, inbetween, Blue,'FaceAlpha',0.5, 'EdgeAlpha',0.2, ...
     'Marker','none',"DisplayName", "S. Deviation");
 hold off
 ylim([0 max(s11)*1.2])
-set(gca,'fontname','Times New Roman')
-fontsize(gca,16,"points")
+set(gca,'fontname','Times New Roman','fontsize',16)
 set(fig,'defaultAxesColorOrder',[[0 0 1]; [1 1 1]]);
 set(gcf, 'color', [1 1 1])
 fig.Units = 'centimeters';
